@@ -1,0 +1,15 @@
+{
+  "name": "voice-notes-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Voice note pipeline: record, upload, enforce the two-minute rule server-side, transcribe with an LLM audio API, play back, and broadcast over Socket.IO.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.7.5"
+  }
+}

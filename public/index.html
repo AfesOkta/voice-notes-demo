@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Notes - demo</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.45 system-ui, sans-serif; margin: 0 auto; max-width: 640px; padding: 16px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { opacity: .65; font-size: 13px; margin-bottom: 16px; }
+  #rec { width: 100%; padding: 22px; font-size: 17px; font-weight: 600; border: 0; border-radius: 14px;
+         background: #d33; color: #fff; }
+  #rec[disabled] { background: #777; }
+  .note { border: 1px solid rgba(128,128,128,.35); border-radius: 12px; padding: 10px 12px; margin: 10px 0; }
+  .note audio { width: 100%; }
+  .meta { font-size: 12px; opacity: .7; }
+  .txt { font-size: 14px; margin-top: 6px; }
+  .err { color: #d33; font-size: 14px; min-height: 20px; }
+</style>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://unpkg.com/socket.io-client@4/dist/socket.io.min.js"></script>
+<script>
+/* No build step: React via createElement. Upgrade path: Vite + JSX when this grows. */
+const { createElement: h, useEffect, useRef, useState } = React;
+const socket = io();
+const MAX_SECONDS = 120;
+
+function App() {
+  const [notes, setNotes] = useState([]);
+  const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const rec = useRef(null);
+  const chunks = useRef([]);
+  const timer = useRef(null);
+
+  useEffect(() => {
+    socket.on("notes:sync", setNotes);
+    socket.on("note:new", (n) => setNotes((prev) => [n, ...prev]));
+    socket.on("note:listened", ({ id, listenedBy }) =>
+      setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, listenedBy } : n))));
+  }, []);
+
+  async function start() {
+    setError("");
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mr = new MediaRecorder(stream);
+    chunks.current = [];
+    mr.ondataavailable = (e) => chunks.current.push(e.data);
+    mr.onstop = () => upload(new Blob(chunks.current, { type: mr.mimeType || "audio/webm" }));
+    mr.start();
+    rec.current = mr;
+    setRecording(true);
+    setElapsed(0);
+    timer.current = setInterval(() => {
+      setElapsed((s) => {
+        if (s + 1 >= MAX_SECONDS) { stop(); return MAX_SECONDS; }
+        return s + 1;
+      });
+    }, 1000);
+  }
+
+  function stop() {
+    clearInterval(timer.current);
+    if (rec.current && rec.current.state !== "inactive") rec.current.stop();
+    rec.current?.stream.getTracks().forEach((t) => t.stop());
+    setRecording(false);
+  }
+
+  async function upload(blob) {
+    setBusy(true);
+    try {
+      const form = new FormData();
+      form.append("audio", blob, "voice-note.webm");
+      form.append("author", "field-tech");
+      const res = await fetch("/api/notes", { method: "POST", body: form });
+      const body = await res.json();
+      if (!res.ok) setError(body.error || "upload failed");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function markListened(id) {
+    fetch(`/api/notes/${id}/listened`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ by: "tech-1" }),
+    });
+  }
+
+  return h("div", null,
+    h("h1", null, "Voice Notes"),
+    h("div", { className: "sub" }, "Record up to " + MAX_SECONDS + "s. Duration is enforced on the server, not only here."),
+    h("button", {
+      id: "rec",
+      onClick: recording ? stop : start,
+      disabled: busy,
+    }, recording ? `Recording ${elapsed}s - tap to stop` : busy ? "Sending..." : "Tap to record"),
+    h("div", { className: "err" }, error),
+    notes.map((n) => h("div", { className: "note", key: n.id },
+      h("audio", { src: n.url, controls: true, onPlay: () => markListened(n.id) }),
+      h("div", { className: "meta" }, `${n.author} - ${n.duration}s - ${new Date(n.createdAt).toLocaleTimeString()}`
+        + (n.listenedBy?.length ? ` - listened by ${n.listenedBy.length}` : " - not listened yet")),
+      h("div", { className: "txt" }, n.transcript),
+    )),
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+</script>
