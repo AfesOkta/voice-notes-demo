@@ -10,11 +10,11 @@ const { execFile } = require("child_process");
 const { promisify } = require("util");
 const http = require("http");
 const { Server } = require("socket.io");
+const { MAX_SECONDS, parseProbeOutput, isValidDuration, isTooLong, formatDuration } = require("./duration");
 
 const execFileAsync = promisify(execFile);
 
 const PORT = process.env.PORT || 3000;
-const MAX_SECONDS = 120; // business rule: voice notes are capped at two minutes
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const DB_PATH = path.join(__dirname, "notes.json");
 
@@ -50,7 +50,7 @@ async function probeDuration(filePath) {
     "-of", "default=noprint_wrappers=1:nokey=1",
     filePath,
   ]);
-  return Number.parseFloat(stdout);
+  return parseProbeOutput(stdout);
 }
 
 async function transcribe(filePath) {
@@ -79,8 +79,8 @@ app.post("/api/notes", upload.single("audio"), async (req, res) => {
 
   try {
     const duration = await probeDuration(filePath);
-    if (!Number.isFinite(duration) || duration <= 0) throw new Error("unreadable audio");
-    if (duration > MAX_SECONDS + 0.5) {
+    if (!isValidDuration(duration)) throw new Error("unreadable audio");
+    if (isTooLong(duration)) {
       fs.unlinkSync(filePath);
       return res.status(422).json({ error: `voice note exceeds ${MAX_SECONDS}s limit`, duration });
     }
@@ -97,7 +97,7 @@ app.post("/api/notes", upload.single("audio"), async (req, res) => {
       id: crypto.randomUUID(),
       url: `/uploads/${path.basename(filePath)}`,
       author: (req.body.author || "field-tech").slice(0, 40),
-      duration: Math.round(duration * 10) / 10,
+      duration: formatDuration(duration),
       transcript,
       listenedBy: [],
       createdAt: new Date().toISOString(),

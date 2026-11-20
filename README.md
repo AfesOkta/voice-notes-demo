@@ -18,6 +18,17 @@ server returns a mock transcript so the rest of the flow stays testable.
 OPENAI_API_KEY=sk-... TRANSCRIBE_MODEL=whisper-1 npm start
 ```
 
+## Tests
+
+```bash
+npm test
+```
+
+Covers the 120s boundary (including codec padding tolerance), duration formatting, ffprobe
+output parsing, and an API-level check that a 130s upload returns 422 while the file is deleted
+rather than stored. The API test generates its own audio with `ffmpeg` and is skipped if
+`ffmpeg` is missing.
+
 ## What is enforced where
 
 | Rule | Place |

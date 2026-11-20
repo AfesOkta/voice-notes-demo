@@ -5,7 +5,8 @@
   "description": "Voice note pipeline: record, upload, enforce the two-minute rule server-side, transcribe with an LLM audio API, play back, and broadcast over Socket.IO.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "express": "^4.19.2",
